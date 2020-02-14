@@ -287,10 +287,19 @@ public class QuartzSchedulerThread extends Thread {
 
                     clearSignaledSchedulingChange();
                     try {
+
+
+
+
                         //todo 从jobStore中获取下次要触发的触发器集合
                         //  idleWaitTime == 30L * 1000L; 当调度程序发现没有当前触发器要触发，它应该等待多长时间再检查...
                         triggers = qsRsrcs.getJobStore().acquireNextTriggers(
                                 now + idleWaitTime, Math.min(availThreadCount, qsRsrcs.getMaxBatchSize()), qsRsrcs.getBatchTimeWindow());
+
+
+
+
+
                         acquiresFailed = 0;
                         if (log.isDebugEnabled())
                             log.debug("batch acquisition of " + (triggers == null ? 0 : triggers.size()) + " triggers");

@@ -199,7 +199,13 @@ public class JobRunShell extends SchedulerListenerSupport implements Runnable {
                 // execute the job
                 try {
                     log.debug("Calling execute on job " + jobDetail.getKey());
+
+
+                    //todo 执行 job 里面的execute 方法.
                     job.execute(jec);
+
+
+
                     endTime = System.currentTimeMillis();
                 } catch (JobExecutionException jee) {
                     endTime = System.currentTimeMillis();
@@ -266,7 +272,15 @@ public class JobRunShell extends SchedulerListenerSupport implements Runnable {
                     continue;
                 }
 
+
+
+
+                //TODO 任务完成,执行清理工作
                 qs.notifyJobStoreJobComplete(trigger, jobDetail, instCode);
+
+
+
+
                 break;
             } while (true);
 

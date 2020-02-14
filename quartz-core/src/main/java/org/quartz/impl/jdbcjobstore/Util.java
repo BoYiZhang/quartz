@@ -72,7 +72,8 @@ public final class Util {
         String sql = MessageFormat.format(query, new Object[]{tablePrefix, schedNameLiteral});
 
 
-        if(Thread.currentThread().getName().indexOf("ClusterManager") == -1){
+
+        if(Thread.currentThread().getName().indexOf("ClusterManager") == -1 && Thread.currentThread().getName().indexOf("MisfireHandler") == -1){
             System.out.println("========================  Sql Info Start  =============================================== "
                     + "\n     ThreadName : "+Thread.currentThread().getName()
                     + "\n     classLoader: "+Thread.currentThread().getContextClassLoader()
