@@ -1009,7 +1009,7 @@ public class StdSchedulerFactory implements SchedulerFactory {
                     dbMgr = DBConnectionManager.getInstance();
                     dbMgr.addConnectionProvider(dsNames[i], cp);
                 } else {
-                    String poolingProvider = pp.getStringProperty(PoolingConnectionProvider.POOLING_PROVIDER);
+                    String poolingProvider = pp.getStringProperty(PoolingConnectionProvider.POOLING_PROVIDER_C3P0);
                     String dsDriver = pp.getStringProperty(PoolingConnectionProvider.DB_DRIVER);
                     String dsURL = pp.getStringProperty(PoolingConnectionProvider.DB_URL);
 
@@ -1413,7 +1413,7 @@ public class StdSchedulerFactory implements SchedulerFactory {
         copyProps.remove(PoolingConnectionProvider.DB_PASSWORD);
         copyProps.remove(PoolingConnectionProvider.DB_MAX_CONNECTIONS);
         copyProps.remove(PoolingConnectionProvider.DB_VALIDATION_QUERY);
-        copyProps.remove(PoolingConnectionProvider.POOLING_PROVIDER);
+        copyProps.remove(PoolingConnectionProvider.POOLING_PROVIDER_C3P0);
 
         if (cp instanceof C3p0PoolingConnectionProvider) {
             copyProps.remove(C3p0PoolingConnectionProvider.DB_MAX_CACHED_STATEMENTS_PER_CONNECTION);
@@ -1448,7 +1448,7 @@ public class StdSchedulerFactory implements SchedulerFactory {
             java.lang.reflect.InvocationTargetException,
             IntrospectionException, SchedulerConfigException {
         props.remove("class");
-        props.remove(PoolingConnectionProvider.POOLING_PROVIDER);
+        props.remove(PoolingConnectionProvider.POOLING_PROVIDER_C3P0);
 
         BeanInfo bi = Introspector.getBeanInfo(obj.getClass());
         PropertyDescriptor[] propDescs = bi.getPropertyDescriptors();

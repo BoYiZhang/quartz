@@ -137,6 +137,8 @@ public class StdScheduler implements Scheduler {
      * <p>
      * Calls the equivalent method on the 'proxied' <code>QuartzScheduler</code>.
      * </p>
+     * Quartz 的启动要调用start()方法进行线程的启动，并执行需要出发的Trigger，start方法里面进行的操作：
+
      */
     public void start() throws SchedulerException {
         sched.start();
@@ -246,6 +248,7 @@ public class StdScheduler implements Scheduler {
      */
     public Date scheduleJob(JobDetail jobDetail, Trigger trigger)
         throws SchedulerException {
+        //todo 这里的sched 是 QuartzScheduler 对象，Quartz和核心类，Quartz调度器
         return sched.scheduleJob(jobDetail, trigger);
     }
 

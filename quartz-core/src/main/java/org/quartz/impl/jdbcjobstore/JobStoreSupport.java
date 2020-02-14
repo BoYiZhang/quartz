@@ -30,6 +30,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.quartz.Calendar;
 import org.quartz.Job;
@@ -684,7 +685,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
      * @see org.quartz.spi.JobStore#schedulerStarted()
      */
     public void schedulerStarted() throws SchedulerException {
-
+        //todo 判断是否是集群模式
         if (isClustered()) {
             clusterManagementThread = new ClusterManager();
             if(initializersLoader != null)
@@ -692,6 +693,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             clusterManagementThread.initialize();
         } else {
             try {
+                //todo 恢复job
                 recoverJobs();
             } catch (SchedulerException se) {
                 throw new SchedulerConfigException(
@@ -702,6 +704,8 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         misfireHandler = new MisfireHandler();
         if(initializersLoader != null)
             misfireHandler.setContextClassLoader(initializersLoader);
+
+        //todo  获取ThreadExecutor 线程管理
         misfireHandler.initialize();
         schedulerRunning = true;
         
@@ -836,6 +840,8 @@ public abstract class JobStoreSupport implements JobStore, Constants {
      * @throws JobPersistenceException if jobs could not be recovered
      */
     protected void recoverJobs() throws JobPersistenceException {
+        //todo 启动的时候 有一个恢复机制：
+        //todo recoverJobs -----  将恢复任何失败或misfire的作业，并根据需要清理数据存储。
         executeInNonManagedTXLock(
             LOCK_TRIGGER_ACCESS,
             new VoidTransactionCallback() {
@@ -857,6 +863,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
     protected void recoverJobs(Connection conn) throws JobPersistenceException {
         try {
             // update inconsistent job states
+            //todo 更新不一致的作业状态  	先修改状态，将 ACQUIRED 和 BLOCKED ---> WAITING
             int rows = getDelegate().updateTriggerStatesFromOtherStates(conn,
                     STATE_WAITING, STATE_ACQUIRED, STATE_BLOCKED);
 
@@ -868,9 +875,11 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                             + " triggers from 'acquired' / 'blocked' state.");
 
             // clean up misfired jobs
+            //todo 1.1 清理misfire的jobs
             recoverMisfiredJobs(conn, true);
             
             // recover jobs marked for recovery that were not fully executed
+            //todo 1.2 恢复未完全执行的标记为恢复的作业 --查询 qrtz_fire_trigger
             List<OperableTrigger> recoveringJobTriggers = getDelegate()
                     .selectTriggersForRecoveringJobs(conn);
             getLog()
@@ -889,6 +898,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             getLog().info("Recovery complete.");
 
             // remove lingering 'complete' triggers...
+            //todo 1.3 移除state == complete
             List<TriggerKey> cts = getDelegate().selectTriggersInState(conn, STATE_COMPLETE);
             for(TriggerKey ct: cts) {
                 removeTrigger(conn, ct);
@@ -897,6 +907,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                 "Removed " + cts.size() + " 'complete' triggers.");
             
             // clean up any fired trigger entries
+            //todo 1.4 清理任何已触发的触发器条目
             int n = getDelegate().deleteFiredTriggers(conn);
             getLog().info("Removed " + n + " stale fired job entries.");
         } catch (JobPersistenceException e) {
@@ -1064,7 +1075,10 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             (isLockOnInsert()) ? LOCK_TRIGGER_ACCESS : null,
             new VoidTransactionCallback() {
                 public void executeVoid(Connection conn) throws JobPersistenceException {
+                    //todo （1）保存JobDetail
                     storeJob(conn, newJob, false);
+
+                    //todo （2）保存Trigger
                     storeTrigger(conn, newTrigger, newJob, false,
                             Constants.STATE_WAITING, false, false);
                 }
@@ -1101,19 +1115,24 @@ public abstract class JobStoreSupport implements JobStore, Constants {
      * <p>
      * Insert or update a job.
      * </p>
+     *
+     * todo 保存JobDetail
      */
     protected void storeJob(Connection conn, 
             JobDetail newJob, boolean replaceExisting)
         throws JobPersistenceException {
 
+        //todo 判断JobDetail是否已经存在，根据name和group
         boolean existingJob = jobExists(conn, newJob.getKey());
         try {
             if (existingJob) {
                 if (!replaceExisting) { 
                     throw new ObjectAlreadyExistsException(newJob); 
                 }
+                //todo 更新JobDetail
                 getDelegate().updateJobDetail(conn, newJob);
             } else {
+                //todo 插入JobDetail
                 getDelegate().insertJobDetail(conn, newJob);
             }
         } catch (IOException e) {
@@ -1169,7 +1188,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
     
     /**
      * <p>
-     * Insert or update a trigger.
+     * todo Insert or update a trigger.
      * </p>
      */
     @SuppressWarnings("ConstantConditions")
@@ -1178,6 +1197,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             boolean forceState, boolean recovering)
         throws JobPersistenceException {
 
+        //todo 判断Trigger是否已经存在，根据name和group
         boolean existingTrigger = triggerExists(conn, newTrigger.getKey());
 
         if ((existingTrigger) && (!replaceExisting)) { 
@@ -1187,7 +1207,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         try {
 
             boolean shouldBepaused;
-
+            //todo 进行一些状态的判断
             if (!forceState) {
                 shouldBepaused = getDelegate().isTriggerGroupPaused(
                         conn, newTrigger.getKey().getGroup());
@@ -1205,7 +1225,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                     state = STATE_PAUSED;
                 }
             }
-
+            //todo 若job为null，重新获取！
             if(job == null) {
                 job = retrieveJob(conn, newTrigger.getJobKey());
             }
@@ -1215,13 +1235,16 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                         + ") referenced by the trigger does not exist.");
             }
 
+            //todo 判断是否有DisallowConcurrentExecution注解，recovering恢复
             if (job.isConcurrentExectionDisallowed() && !recovering) { 
                 state = checkBlockedState(conn, job.getKey(), state);
             }
             
             if (existingTrigger) {
+                //todo 更新trigger
                 getDelegate().updateTrigger(conn, newTrigger, state, job);
             } else {
+                //todo 插入trigger
                 getDelegate().insertTrigger(conn, newTrigger, state, job);
             }
         } catch (Exception e) {
@@ -1440,6 +1463,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         boolean removedTrigger;
         try {
             // this must be called before we delete the trigger, obviously
+            //todo a）删除前，先查询jobDetail
             JobDetail job = getDelegate().selectJobForTrigger(conn,
                     getClassLoadHelper(), key, false);
 
@@ -2790,6 +2814,11 @@ public abstract class JobStoreSupport implements JobStore, Constants {
      * @see #releaseAcquiredTrigger(OperableTrigger)
      */
     @SuppressWarnings("unchecked")
+
+    //todo acquireNextTriggers( now + idleWaitTime, Math.min(availThreadCount, qsRsrcs.getMaxBatchSize()), qsRsrcs.getBatchTimeWindow());
+    //   获取要触发的下一个N个触发器的句柄，并由调用调度器将它们标记为“保留”。
+    //   noLaterThan if > 0，那么JobStore应该只返回一个触发器，该触发器不会晚于此值中所表示的时间触发：
+
     public List<OperableTrigger> acquireNextTriggers(final long noLaterThan, final int maxCount, final long timeWindow)
         throws JobPersistenceException {
         
@@ -2802,12 +2831,14 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         return executeInNonManagedTXLock(lockName, 
                 new TransactionCallback<List<OperableTrigger>>() {
                     public List<OperableTrigger> execute(Connection conn) throws JobPersistenceException {
+                        //todo 到了这里，继续往下,这里返回需要下次执行的Trigger
                         return acquireNextTrigger(conn, noLaterThan, maxCount, timeWindow);
                     }
                 },
                 new TransactionValidator<List<OperableTrigger>>() {
                     public Boolean validate(Connection conn, List<OperableTrigger> result) throws JobPersistenceException {
                         try {
+                            //todo 选择所有fired-trigger记录的状态
                             List<FiredTriggerRecord> acquired = getDelegate().selectInstancesFiredTriggerRecords(conn, getInstanceId());
                             Set<String> fireInstanceIds = new HashSet<String>();
                             for (FiredTriggerRecord ft : acquired) {
@@ -2841,16 +2872,20 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         do {
             currentLoopCount ++;
             try {
+                //todo 查询下次触发的触发器 Triggerkey ,在继续看这个方法里面
                 List<TriggerKey> keys = getDelegate().selectTriggerToAcquire(conn, noLaterThan + timeWindow, getMisfireTime(), maxCount);
                 
                 // No trigger is ready to fire yet.
+                //todo 还没有触发器准备好。 keys 为上面查询出来的！！！
                 if (keys == null || keys.size() == 0)
                     return acquiredTriggers;
 
                 long batchEnd = noLaterThan;
 
+                //todo 循环TriggerKey name 和 group
                 for(TriggerKey triggerKey: keys) {
                     // If our trigger is no longer available, try a new one.
+                    //todo 如果我们的触发器不再可用，请尝试一个新的触发器。 （retrieve：检索）
                     OperableTrigger nextTrigger = retrieveTrigger(conn, triggerKey);
                     if(nextTrigger == null) {
                         continue; // next trigger
@@ -2858,6 +2893,8 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                     
                     // If trigger's job is set as @DisallowConcurrentExecution, and it has already been added to result, then
                     // put it back into the timeTriggers set and continue to search for next trigger.
+                    //todo 如果触发器的作业设置为@DisallowConcurrentExecution，并且它已经添加到结果中，则将其放回到timeTriggers设置并继续搜索下
+                    //     一个触发器。
                     JobKey jobKey = nextTrigger.getJobKey();
                     JobDetail job;
                     try {
@@ -2898,11 +2935,15 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                     }
                     // We now have a acquired trigger, let's add to return list.
                     // If our trigger was no longer in the expected state, try a new one.
+                    //todo 我们现在有一个获取触发器，让我们添加到返回列表。 如果我们的触发器不再处于预期状态，请尝试新的触发器。
                     int rowsUpdated = getDelegate().updateTriggerStateFromOtherState(conn, triggerKey, STATE_ACQUIRED, STATE_WAITING);
                     if (rowsUpdated <= 0) {
                         continue; // next trigger
                     }
                     nextTrigger.setFireInstanceId(getFiredTriggerRecordId());
+                    //todo 插入一个fired Trigger,
+                    // 更新当前执行的时间（FIRED_TIME）和下次要执行的时间（SCHED_TIME）
+
                     getDelegate().insertFiredTrigger(conn, nextTrigger, STATE_ACQUIRED, null);
 
                     if(acquiredTriggers.isEmpty()) {
@@ -2973,6 +3014,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
      *         state.
      */
     @SuppressWarnings("unchecked")
+    //todo 通知JobStore调度程序现在正在触发其先前已获取（保留）的给定触发器（执行其关联的作业）。
     public List<TriggerFiredResult> triggersFired(final List<OperableTrigger> triggers) throws JobPersistenceException {
         return executeInNonManagedTXLock(LOCK_TRIGGER_ACCESS,
                 new TransactionCallback<List<TriggerFiredResult>>() {
@@ -3026,6 +3068,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         Calendar cal = null;
 
         // Make sure trigger wasn't deleted, paused, or completed...
+        //todo 确保触发器未被删除，暂停或完成...
         try { // if trigger was deleted, state will be STATE_DELETED
             String state = getDelegate().selectTriggerState(conn,
                     trigger.getKey());
@@ -3038,6 +3081,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         }
 
         try {
+            //todo 恢复job，根据 trigger.getJobKey() 获取Job的name 和 group
             job = retrieveJob(conn, trigger.getJobKey());
             if (job == null) { return null; }
         } catch (JobPersistenceException jpe) {
@@ -3051,12 +3095,14 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             throw jpe;
         }
 
+        //todo  trigger 有CalendarName  去查询qrtz_calendar 表
         if (trigger.getCalendarName() != null) {
             cal = retrieveCalendar(conn, trigger.getCalendarName());
             if (cal == null) { return null; }
         }
 
         try {
+            //todo 更新触发的触发器记录。 将更新字段“触发实例”，“触发时间”和“状态”。STATE_EXECUTING:执行状态
             getDelegate().updateFiredTrigger(conn, trigger, STATE_EXECUTING, job);
         } catch (SQLException e) {
             throw new JobPersistenceException("Couldn't insert fired trigger: "
@@ -3066,11 +3112,13 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         Date prevFireTime = trigger.getPreviousFireTime();
 
         // call triggered - to update the trigger's next-fire-time state...
+        // todo 更新触发器的下一个触发时间状态...
         trigger.triggered(cal);
 
         String state = STATE_WAITING;
         boolean force = true;
-        
+
+        //todo 相关联的Job类是否携带DisallowConcurrentExecution注释。
         if (job.isConcurrentExectionDisallowed()) {
             state = STATE_BLOCKED;
             force = false;
@@ -3086,17 +3134,21 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                         "Couldn't update states of blocked triggers: "
                                 + e.getMessage(), e);
             }
-        } 
-            
+        }
+
+        //todo getNextFireTime == null 说明trigger执行完成，没有下次触发的时间了
         if (trigger.getNextFireTime() == null) {
             state = STATE_COMPLETE;
             force = true;
         }
 
+        //todo 插入或者更新一个Trigger ，进入看看
         storeTrigger(conn, trigger, job, true, state, force, false);
 
+        //todo 清除'dirty'标志（将dirty标志设置为false）。
         job.getJobDataMap().clearDirtyFlag();
 
+        //todo 创建一个 TriggerFiredBundle的对象，封装数据
         return new TriggerFiredBundle(job, trigger, cal, trigger.getKey().getGroup()
                 .equals(Scheduler.DEFAULT_RECOVERY_GROUP), new Date(), trigger
                 .getPreviousFireTime(), prevFireTime, trigger.getNextFireTime());
@@ -3920,6 +3972,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             this.manage();
 
             ThreadExecutor executor = getThreadExecutor();
+
             executor.execute(ClusterManager.this);
         }
 
@@ -3950,7 +4003,6 @@ public abstract class JobStoreSupport implements JobStore, Constants {
         @Override
         public void run() {
             while (!shutdown) {
-
                 if (!shutdown) {
                     long timeToSleep = getClusterCheckinInterval();
                     long transpiredTime = (System.currentTimeMillis() - lastCheckin);
@@ -3962,7 +4014,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                     if(numFails > 0) {
                         timeToSleep = Math.max(getDbRetryInterval(), timeToSleep);
                     }
-                    
+
                     try {
                         Thread.sleep(timeToSleep);
                     } catch (Exception ignore) {
@@ -4028,6 +4080,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
             
             while (!shutdown) {
 
+
                 long sTime = System.currentTimeMillis();
 
                 RecoverMisfiredJobsResult recoverMisfiredJobsResult = manage();
@@ -4048,7 +4101,7 @@ public abstract class JobStoreSupport implements JobStore, Constants {
                             timeToSleep = Math.max(getDbRetryInterval(), timeToSleep);
                         }
                     }
-                    
+
                     try {
                         Thread.sleep(timeToSleep);
                     } catch (Exception ignore) {

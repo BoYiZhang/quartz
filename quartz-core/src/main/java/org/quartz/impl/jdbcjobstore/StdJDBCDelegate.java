@@ -29,12 +29,7 @@ import java.io.NotSerializableException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.math.BigDecimal;
-import java.sql.Blob;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
+import java.sql.*;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -233,6 +228,7 @@ public class StdJDBCDelegate implements DriverDelegate, StdJDBCConstants {
             ps.setString(1, newState);
             ps.setString(2, oldState1);
             ps.setString(3, oldState2);
+
             return ps.executeUpdate();
         } finally {
             closeStatement(ps);
@@ -1158,6 +1154,7 @@ public class StdJDBCDelegate implements DriverDelegate, StdJDBCConstants {
             JobDetail jobDetail) throws SQLException, IOException {
 
         // save some clock cycles by unnecessarily writing job data blob ...
+        //todo 通过不必要地写入作业数据blob来保存一些时钟周期...
         boolean updateJobData = trigger.getJobDataMap().isDirty();
         ByteArrayOutputStream baos = null;
         if(updateJobData) {
@@ -2589,6 +2586,17 @@ public class StdJDBCDelegate implements DriverDelegate, StdJDBCConstants {
      *          maximum number of trigger keys allow to acquired in the returning list.
      *          
      * @return A (never null, possibly empty) list of the identifiers (Key objects) of the next triggers to be fired.
+     */
+    /**
+     选择下一次需要触发器的Trigger，它将在两个给定时间戳之间按照触发时间的升序触发，然后按优先级降序。
+     *参数：
+         conn数据库Connection
+         noLaterThan触发器的getNextFireTime（）的最大值（独占）
+         noEarlierThan触发器的最大值getMisfireTime（）
+         maxCount允许在返回列表中获取的最大触发器数量。
+      备注：
+         noLaterThan ： System.currentTimeMillis() + 30*1000L(30秒)
+         noEarlierThan ：System.currentTimeMillis() + 60*1000L（one minute：一分钟）
      */
     public List<TriggerKey> selectTriggerToAcquire(Connection conn, long noLaterThan, long noEarlierThan, int maxCount)
         throws SQLException {

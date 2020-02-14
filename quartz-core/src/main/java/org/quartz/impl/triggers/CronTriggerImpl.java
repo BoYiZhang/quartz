@@ -606,6 +606,14 @@ public class CronTriggerImpl extends AbstractTrigger<CronTrigger> implements Cro
      * </ul>
      * </p>
      */
+
+    /*
+    根据创建CronTrigger时选择的MISFIRE_INSTRUCTION_XXX更新CronTrigger的状态。
+
+    如果失火指令设置为MISFIRE_INSTRUCTION_SMART_POLICY，则将使用以下方案：
+
+    •指令将解释为MISFIRE_INSTRUCTION_FIRE_ONCE_NOW
+    */
     @Override
     public void updateAfterMisfire(org.quartz.Calendar cal) {
         int instr = getMisfireInstruction();
@@ -713,6 +721,7 @@ public class CronTriggerImpl extends AbstractTrigger<CronTrigger> implements Cro
      * 
      * @see #executionComplete(JobExecutionContext, JobExecutionException)
      */
+    //todo 当调度程序决定“触发”触发器（执行关联的作业）时调用，以便为触发器更新自身以进行下一次触发（如果有）。
     @Override
     public void triggered(org.quartz.Calendar calendar) {
         previousFireTime = nextFireTime;
@@ -822,12 +831,22 @@ public class CronTriggerImpl extends AbstractTrigger<CronTrigger> implements Cro
         switch(misfireInstruction) {
             case MISFIRE_INSTRUCTION_SMART_POLICY:
                 break;
+
+            //todo ——不触发立即执行
+            //      ——等待下次Cron触发频率到达时刻开始按照Cron频率依次执行
             case MISFIRE_INSTRUCTION_DO_NOTHING:
                 cb.withMisfireHandlingInstructionDoNothing();
                 break;
+
+            //todo ——以当前时间为触发频率立刻触发一次执行
+            //     ——然后按照Cron频率依次执行
             case MISFIRE_INSTRUCTION_FIRE_ONCE_NOW:
                 cb.withMisfireHandlingInstructionFireAndProceed();
                 break;
+
+            //todo    ——以错过的第一个频率时间立刻开始执行
+            //        ——重做错过的所有频率周期后
+            //        ——当下一次触发频率发生时间大于当前时间后，再按照正常的Cron频率依次执行
             case MISFIRE_INSTRUCTION_IGNORE_MISFIRE_POLICY:
                 cb.withMisfireHandlingInstructionIgnoreMisfires();
                 break;

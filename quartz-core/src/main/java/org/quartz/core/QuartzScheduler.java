@@ -24,6 +24,7 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.rmi.server.UnicastRemoteObject;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -522,7 +523,15 @@ public class QuartzScheduler implements RemotableQuartzScheduler {
      * All <code>{@link org.quartz.Trigger}s</code> that have misfired will
      * be passed to the appropriate TriggerListener(s).
      * </p>
+     * todo
+     * 启动的初始化
+     * 判断是否集群，对应不同的操作
+     * 若是非集群，首先有恢复机制，恢复任何失败或misfire的作业，并根据需要清理数据存储。
+     * 初始化线程管理，唤醒所有等待的线程！
+     * 线程中启动线程是调用start()方法，但是真正执行线程任务的操作在run()中！
+     *
      */
+
     public void start() throws SchedulerException {
 
         if (shuttingDown|| closed) {
@@ -534,14 +543,18 @@ public class QuartzScheduler implements RemotableQuartzScheduler {
         // right after entering start()
         notifySchedulerListenersStarting();
 
+        //todo 初始化标识为null，进行初始化操作
         if (initialStart == null) {
             initialStart = new Date();
+            //todo  1.主要分析的地方
             this.resources.getJobStore().schedulerStarted();            
             startPlugins();
         } else {
+
+            //todo 2.如果已经初始化过，则恢复jobStore
             resources.getJobStore().schedulerResumed();
         }
-
+        //todo 3.唤醒所有等待的线程
         schedThread.togglePause(false);
 
         getLog().info(
@@ -809,11 +822,26 @@ public class QuartzScheduler implements RemotableQuartzScheduler {
      * @throws SchedulerException
      *           if the Job or Trigger cannot be added to the Scheduler, or
      *           there is an internal Scheduler error.
+     *
+     *
+     *
+
+     * 将给定org.quartz.JobDetail标识的org.quartz.Job添加到Scheduler，
+     * 并将给定的org.quartz.Trigger与其关联。
+     * 如果给定的触发器不引用任何作业，则它将被设置为引用与其一起传递的作业到此方法中。
+     *
+     * 实现在 QuartzScheduler.scheduleJob(JobDetail jobDetail,
+     *       Trigger trigger)
+     *
      */
+
+
     public Date scheduleJob(JobDetail jobDetail,
             Trigger trigger) throws SchedulerException {
+        //todo 验证调度器是否关闭，关闭抛出异常
         validateState();
 
+        //todo 检查 jobDetail和trigger
         if (jobDetail == null) {
             throw new SchedulerException("JobDetail cannot be null");
         }
@@ -832,6 +860,7 @@ public class QuartzScheduler implements RemotableQuartzScheduler {
         
         OperableTrigger trig = (OperableTrigger)trigger;
 
+        //todo getJobKey 获取 getJobName(), getJobGroup()
         if (trigger.getJobKey() == null) {
             trig.setJobKey(jobDetail.getKey());
         } else if (!trigger.getJobKey().equals(jobDetail.getKey())) {
@@ -839,20 +868,35 @@ public class QuartzScheduler implements RemotableQuartzScheduler {
                 "Trigger does not reference given job!");
         }
 
+        //todo 验证trigger
         trig.validate();
 
         Calendar cal = null;
         if (trigger.getCalendarName() != null) {
             cal = resources.getJobStore().retrieveCalendar(trigger.getCalendarName());
         }
+
+        //todo 在触发器首次添加到调度程序时由调度程序调用，以便让触发器基于任何关联的日历计算
+        //todo 其第一次触发时间。调用此方法后，getNextFireTime（）应返回有效的答案。
         Date ft = trig.computeFirstFireTime(cal);
 
         if (ft == null) {
             throw new SchedulerException(
                     "Based on configured schedule, the given trigger '" + trigger.getKey() + "' will never fire.");
+        }else{
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
+            System.out.println("computeFirstFireTime : "+ sdf.format(ft));
         }
 
+        //todo 存储给定的org.quartz.JobDetail和org.quartz.Trigger。
+        //todo 主要看这一行
+
+
+        //todo org.quartz.impl.jdbcjobstore#JobStoreSupport
         resources.getJobStore().storeJobAndTrigger(jobDetail, trig);
+
+
+
         notifySchedulerListenersJobAdded(jobDetail);
         notifySchedulerThread(trigger.getNextFireTime().getTime());
         notifySchedulerListenersSchduled(trigger);

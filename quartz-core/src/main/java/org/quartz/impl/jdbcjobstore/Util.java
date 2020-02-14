@@ -26,8 +26,11 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.text.MessageFormat;
 import java.util.Locale;
+import java.util.logging.Logger;
 
 import org.quartz.JobPersistenceException;
+
+import static java.rmi.server.RemoteServer.getLog;
 
 /**
  * <p>
@@ -65,7 +68,19 @@ public final class Util {
      * @return the query, with proper table prefix substituted
      */
     public static String rtp(String query, String tablePrefix, String schedNameLiteral) {
-        return MessageFormat.format(query, new Object[]{tablePrefix, schedNameLiteral});
+
+        String sql = MessageFormat.format(query, new Object[]{tablePrefix, schedNameLiteral});
+
+
+        if(Thread.currentThread().getName().indexOf("ClusterManager") == -1){
+            System.out.println("========================  Sql Info Start  =============================================== "
+                    + "\n     ThreadName : "+Thread.currentThread().getName()
+                    + "\n     classLoader: "+Thread.currentThread().getContextClassLoader()
+                    + "\n     将要执行的 sql : " + sql
+                    + "\n========================  Sql Info Start  =============================================== ");
+        }
+
+        return sql ;
     }
 
     /**

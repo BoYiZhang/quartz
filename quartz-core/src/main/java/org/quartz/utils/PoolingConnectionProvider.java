@@ -35,7 +35,7 @@ import javax.sql.DataSource;
 public interface PoolingConnectionProvider extends ConnectionProvider {
 
     /** The pooling provider. */
-    String POOLING_PROVIDER = "provider";
+    String zPOOLING_PROVIDER = "provider";
 
     /** The c3p0 pooling provider. */
     String POOLING_PROVIDER_C3P0 = "c3p0";
